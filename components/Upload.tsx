@@ -1,5 +1,5 @@
 import { CheckCircle2, ImageIcon, UploadIcon } from "lucide-react";
-import { useState, type ChangeEvent, type DragEvent } from "react";
+import { useState, type ChangeEvent, type DragEvent, useCallback, useRef, useEffect } from "react";
 import { useOutletContext } from "react-router";
 import { PROGRESS_INCREMENT, PROGRESS_INTERVAL_MS, REDIRECT_DELAY_MS } from "lib/constants";
 
@@ -11,7 +11,16 @@ const Upload = ({ onComplete }: UploadProps) => {
    const [file, setFile] = useState<File | null>(null);
    const [isDragging, setIsDragging] = useState(false);
    const [progress, setProgress] = useState(0);
+   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
    const { isSignedIn } = useOutletContext<AuthContext>();
+
+   useEffect(() => {
+      return () => {
+         if (intervalRef.current) clearInterval(intervalRef.current);
+         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      };
+   }, []);
 
    const processFile = (selectedFile: File) => {
       if (!isSignedIn) return;
@@ -21,14 +30,20 @@ const Upload = ({ onComplete }: UploadProps) => {
 
       const reader = new FileReader();
 
+      reader.onerror = () => {
+         console.error("Error reading file");
+         setFile(null);
+         setProgress(0);
+      };
+
       reader.onload = (e) => {
          const base64 = e.target?.result as string;
 
-         const interval = setInterval(() => {
+         intervalRef.current = setInterval(() => {
             setProgress((prev) => {
                if (prev >= 100) {
-                  clearInterval(interval);
-                  setTimeout(() => {
+                  clearInterval(intervalRef.current!);
+                  timeoutRef.current = setTimeout(() => {
                      if (onComplete) onComplete(base64);
                   }, REDIRECT_DELAY_MS);
                   return 100;
@@ -57,8 +72,10 @@ const Upload = ({ onComplete }: UploadProps) => {
       setIsDragging(false);
       if (!isSignedIn) return;
 
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-         processFile(e.dataTransfer.files[0]);
+      const droppableFile = e?.dataTransfer?.files[0];
+      const allowedTypes = ["image/jpeg", "image/png", "image/jpg"];
+      if (droppableFile && allowedTypes.includes(droppableFile.type)) {
+         processFile(droppableFile);
       }
    };
 
